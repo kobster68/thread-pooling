@@ -1,0 +1,52 @@
+@startuml thread-pooling-sequence
+title Thread Pooling: one pool run (drawn with 2 workers; the program uses 10)
+skinparam sequenceMessageAlign center
+
+participant "ThreadPoolStrategy" as S
+participant "ThreadPool" as P
+participant "TaskQueue" as Q
+participant "pool-worker-0" as W0
+participant "pool-worker-1" as W1
+
+== Startup: workers are created once ==
+S -> P : new ThreadPool(poolSize)
+P -> W0 ** : start
+P -> W1 ** : start
+W0 -> Q : take()
+note right of Q : queue empty:\nworkers wait()
+W1 -> Q : take()
+
+== Submit: one task per chunk ==
+loop for each chunk
+  S -> P : submit(PrimeRangeTask)
+  P -> Q : put(task)\nnotifyAll()
+end
+
+== Reuse: each worker takes the next task when it finishes one ==
+par
+  loop until it takes a shutdown marker
+    Q --> W0 : task
+    W0 -> W0 : run(): count primes,\nwrite slots[index]
+    W0 -> Q : take()
+  end
+else
+  loop until it takes a shutdown marker
+    Q --> W1 : task
+    W1 -> W1 : run(): count primes,\nwrite slots[index]
+    W1 -> Q : take()
+  end
+end
+
+== Shutdown: queued work drains first ==
+S -> P : shutdown()
+P -> Q : put(SHUTDOWN_MARKER) x2\n(behind every real task)
+Q --> W0 : SHUTDOWN_MARKER
+W0 -> W0 : exit loop
+destroy W0
+Q --> W1 : SHUTDOWN_MARKER
+W1 -> W1 : exit loop
+destroy W1
+S -> P : awaitTermination()
+P -> P : join() each worker
+P --> S : returns; all slots visible\n(join happens-before)
+@enduml

@@ -112,4 +112,7 @@ working at once.
 
 ## Design (UML)
 
-<!-- TODO(slice 1: Godson) -->
+The class diagram shows the three packages (`pool`, `primes`, `run`) and how they fit together. The sequence diagram walks through one pool run: workers created once, one task per chunk, each worker going back to the queue for the next task, and shutdown letting queued work finish. The narrative and course mapping are in [uml/pool/README.md](uml/pool/README.md).
+
+- Class diagram: [thread-pooling-class.png](uml/pool/thread-pooling-class.png) ([source](uml/pool/thread-pooling-class.puml))
+- Sequence diagram: [thread-pooling-sequence.png](uml/pool/thread-pooling-sequence.png) ([source](uml/pool/thread-pooling-sequence.puml), [text version](uml/pool/thread-pooling-sequence.utxt))
