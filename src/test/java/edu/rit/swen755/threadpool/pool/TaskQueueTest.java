@@ -1,22 +1,25 @@
 package edu.rit.swen755.threadpool.pool;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Acceptance tests for {@link TaskQueue} (slice 1). Disabled until the slice lands.
+ * Tests for {@link TaskQueue}: FIFO order, blocking take, null rejection, and a two-consumer
+ * hand-off where every item must come out exactly once.
  */
-@Disabled("TODO(slice 1: Godson) — enable when implementing")
 class TaskQueueTest {
 
     @Test
@@ -60,5 +63,58 @@ class TaskQueueTest {
         assertSame(first, queue.take());
         assertSame(second, queue.take());
         assertSame(third, queue.take());
+    }
+
+    @Test
+    void putRejectsNull() {
+        TaskQueue queue = new TaskQueue();
+
+        assertThrows(NullPointerException.class, () -> queue.put(null));
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void twoConsumersTakeEveryItemExactlyOnce() throws InterruptedException {
+        TaskQueue queue = new TaskQueue();
+        Runnable stop = () -> { };
+        List<Runnable> taken = Collections.synchronizedList(new ArrayList<>());
+        List<Throwable> consumerFailures = Collections.synchronizedList(new ArrayList<>());
+
+        Runnable consume = () -> {
+            try {
+                for (Runnable item = queue.take(); item != stop; item = queue.take()) {
+                    taken.add(item);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (RuntimeException e) {
+                consumerFailures.add(e);
+            }
+        };
+        Thread first = new Thread(consume);
+        Thread second = new Thread(consume);
+        first.start();
+        second.start();
+
+        List<Runnable> items = new ArrayList<>();
+        for (int i = 0; i < 1_000; i++) {
+            Runnable item = () -> { };
+            items.add(item);
+            queue.put(item);
+            if (i % 50 == 0) {
+                // let both consumers drain the queue and start waiting, so each put wakes two waiters
+                Thread.sleep(2);
+            }
+        }
+        queue.put(stop);
+        queue.put(stop);
+        first.join();
+        second.join();
+
+        assertTrue(consumerFailures.isEmpty(), "a consumer failed: " + consumerFailures);
+        assertEquals(1_000, taken.size(), "no item may be lost or taken twice");
+        Set<Runnable> distinct = Collections.newSetFromMap(new IdentityHashMap<>());
+        distinct.addAll(taken);
+        assertEquals(new HashSet<>(items), new HashSet<>(distinct), "every item put is taken exactly once");
     }
 }
