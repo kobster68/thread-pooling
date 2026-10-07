@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Reject library thread pooling under src/main
+        run: |
+          if grep -rnE 'java\.util\.concurrent|parallelStream\(|\.parallel\(\)' src/main; then
+            echo "Found library concurrency (java.util.concurrent or a parallel stream) under src/main; the shipped pool must be hand-built." >&2
+            exit 1
+          fi
+          echo "No java.util.concurrent or parallel-stream references under src/main."
+
+      - name: Build and test
+        run: mvn -B verify
