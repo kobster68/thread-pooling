@@ -52,7 +52,7 @@ mvn verify
 
 | Component | Use |
 | --- | --- |
-| Java / JDK 21 | The whole runtime: records, `Thread`, `Runnable`, `synchronized`, `wait()`/`notifyAll()`, and `join()` |
+| Java / JDK 21 | The whole runtime: records, `Thread`, `Runnable`, `synchronized`, `wait()`/`notify()`, and `join()` |
 | JUnit Jupiter 5.14.4 | Unit and concurrency tests (test scope only) |
 | Maven 3.9+ | Build and test runner |
 | Maven Compiler 3.14.0 / Surefire 3.6.0 / Jar 3.4.2 | Compilation, test execution, and the runnable jar |
@@ -66,7 +66,7 @@ dependencies.
 The shipped program builds its own thread pool. Nothing from `java.util.concurrent` is used under
 `src/main`: no executors, no `ForkJoinPool`, no parallel streams, no async `CompletableFuture`, no
 atomics, no locks, and no library queues. The pool, the worker loop, and the FIFO work queue are
-written by hand from `Thread`, `Runnable`, `synchronized`, `wait()`/`notifyAll()`, and `join()`.
+written by hand from `Thread`, `Runnable`, `synchronized`, `wait()`/`notify()`, and `join()`.
 The assignment allows existing libraries for everything except thread pooling itself, so the pool
 must be built from scratch. A continuous-integration check greps `src/main` for
 `java.util.concurrent` and for parallel streams (`parallelStream(` and `.parallel()`), and fails

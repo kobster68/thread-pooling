@@ -2,6 +2,8 @@ package edu.rit.swen755.threadpool.pool;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -142,6 +144,7 @@ class ThreadPoolTest {
     }
 
     @Test
+    @ResourceLock(Resources.SYSTEM_ERR) // swaps or writes the global System.err
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void aFailingTaskPrintsOneTaskFailedLineToStandardError() throws InterruptedException {
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
@@ -232,5 +235,45 @@ class ThreadPoolTest {
         assertEquals(10, laterWorkers.size(), "the other worker still runs every remaining task");
         assertTrue(!laterWorkers.contains(interrupted.get(0)),
                 "the interrupted worker must stop after its current task, but it also ran: " + laterWorkers);
+    }
+
+    @Test
+    @ResourceLock(Resources.SYSTEM_ERR) // swaps or writes the global System.err
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void anErrorFromATaskIsNotSwallowedAndEndsItsWorker() throws InterruptedException {
+        ThreadPool pool = new ThreadPool(1);
+        List<String> ranAfter = Collections.synchronizedList(new ArrayList<>());
+
+        pool.submit(() -> {
+            throw new AssertionError("the JVM is in trouble");
+        });
+        pool.submit(() -> ranAfter.add("ran"));
+        pool.shutdown();
+        pool.awaitTermination();
+
+        assertTrue(ranAfter.isEmpty(),
+                "an Error is not an ordinary task failure: the worker should stop, not carry on");
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void awaitTerminationFromInsideAPoolTaskThrowsInsteadOfHanging() throws InterruptedException {
+        ThreadPool[] holder = new ThreadPool[1];
+        List<Throwable> thrown = Collections.synchronizedList(new ArrayList<>());
+        holder[0] = new ThreadPool(1);
+
+        holder[0].submit(() -> {
+            holder[0].shutdown();
+            try {
+                holder[0].awaitTermination();
+            } catch (Throwable t) {
+                thrown.add(t);
+            }
+        });
+        holder[0].shutdown();
+        holder[0].awaitTermination();
+
+        assertEquals(1, thrown.size(), "a worker cannot wait for itself to finish");
+        assertTrue(thrown.get(0) instanceof IllegalStateException, "got " + thrown.get(0));
     }
 }

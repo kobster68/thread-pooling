@@ -15,7 +15,7 @@ Source: [thread-pooling-class.puml](thread-pooling-class.puml)
 
 The program has three packages, and the diagram groups the classes that way.
 
-`pool` is the tactic. `ThreadPool` creates its workers once, in its constructor, and keeps them for the life of the pool. Each worker is a `ThreadPool.Worker`, a private nested class that runs on its own named thread (`pool-worker-0` up to `pool-worker-9`). Workers never talk to the code that submits work. Both sides only touch `TaskQueue`, a first-in, first-out queue we wrote by hand with `synchronized`, `wait()` and `notifyAll()`. `submit` puts a task on the queue, and a worker takes it off. Nothing in this package comes from `java.util.concurrent`, because the assignment rules out library thread pools.
+`pool` is the tactic. `ThreadPool` creates its workers once, in its constructor, and keeps them for the life of the pool. Each worker is a `ThreadPool.Worker`, a private nested class that runs on its own named thread (`pool-worker-0` up to `pool-worker-9`). Workers never talk to the code that submits work. Both sides only touch `TaskQueue`, a first-in, first-out queue we wrote by hand with `synchronized`, `wait()` and `notify()`. `submit` puts a task on the queue, and a worker takes it off. Nothing in this package comes from `java.util.concurrent`, because the assignment rules out library thread pools.
 
 `primes` is the work. `Chunks.split` cuts [1, N] into 100 equal ranges, and each range becomes a `PrimeRangeTask`, which is just a `Runnable`. The pool has no idea it's counting primes, and we liked keeping it that way: it would run any `Runnable` you gave it. Each task writes its `ChunkResult` into its own slot of a shared array, so no two tasks ever write to the same place and the results need no locking.
 
@@ -32,12 +32,12 @@ Source: [thread-pooling-sequence.puml](thread-pooling-sequence.puml) · Text ver
 This is one run of `ThreadPoolStrategy`. It is drawn with two workers to keep it readable; the real program has ten, and they all behave the same way.
 
 1. Creating the pool starts both worker threads, once. Each one immediately calls `take()`, finds the queue empty, and waits.
-2. The strategy submits a `PrimeRangeTask` for every chunk. Each `put` wakes the waiting workers.
+2. The strategy submits a `PrimeRangeTask` for every chunk. Each `put` wakes one waiting worker, since one task can only go to one worker.
 3. This is the part of the diagram that matters most for the assignment, which asks that a thread be reused for the next piece of work. A worker takes a task, runs it, writes its result, and goes straight back to `take()` for the next one. It isn't destroyed and recreated between tasks. The two loops run at the same time (the `par` frame), and a worker that drew a cheaper chunk simply comes back sooner and takes more of them. With 100 chunks and 10 workers, each worker ends up running about ten.
 4. `shutdown()` adds one marker per worker to the back of the queue, behind every real task. Because the queue is first-in, first-out, a worker only reaches its marker after all the real work has been handed out. When a worker takes its marker, it leaves its loop and the thread ends.
 5. `awaitTermination()` joins each worker thread. In Java, everything a thread did before it ended is visible to the thread that joins it, so once the joins return, the strategy can safely read every result slot.
 
-Two rules didn't fit in the drawing but are in the code and the tests. A task that throws is reported on one line of standard error, and its worker carries on, so one bad task can't shrink the pool. And a worker that is interrupted stops after its current task, even when more work is queued.
+Two rules didn't fit in the drawing but are in the code and the tests. A task that throws an exception is reported on one line of standard error, and its worker carries on, so one bad task can't shrink the pool. (An `Error`, like running out of memory, is different: the worker stops, because the JVM itself is in trouble.) And a worker that is interrupted stops after its current task, even when more work is queued.
 
 ## How this maps to the course
 

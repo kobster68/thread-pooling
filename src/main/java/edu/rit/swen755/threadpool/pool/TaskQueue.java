@@ -6,12 +6,12 @@ import java.util.Deque;
 /**
  * A hand-built, unbounded, FIFO hand-off between the submitter and the pool's workers.
  *
- * <p>The queue is built only from {@code synchronized} and {@code wait()}/{@code notifyAll()};
+ * <p>The queue is built only from {@code synchronized} and {@code wait()}/{@code notify()};
  * it uses no executors, locks, atomics, or library queues from the JDK's concurrency utilities.
  * {@link #take()} waits in a
  * {@code while (empty)} loop so that neither a lost wakeup nor a spurious wakeup can let a
- * worker return without a task, and {@link #put(Runnable)} calls {@code notifyAll()} to wake
- * any waiting workers. The queue is unbounded because the program submits a fixed, small
+ * worker return without a task, and {@link #put(Runnable)} calls {@code notify()} to wake one
+ * waiting worker for the one task it added. The queue is unbounded because the program submits a fixed, small
  * number of tasks, so bounding it would add nothing here.
  *
  */
@@ -26,7 +26,7 @@ public final class TaskQueue {
     }
 
     /**
-     * Adds a task to the back of the queue and wakes any waiting worker.
+     * Adds a task to the back of the queue and wakes one waiting worker.
      *
      * <p>Tasks are handed to workers in first-in, first-out order.
      *
@@ -35,7 +35,10 @@ public final class TaskQueue {
      */
     public synchronized void put(Runnable task) {
         tasks.addLast(task);
-        notifyAll();
+        // one item was added, so one waiter is enough: every waiter waits for the same thing
+        // (a non-empty queue) and any of them can take it. Waking all of them would just send
+        // the rest straight back to wait().
+        notify();
     }
 
     /**

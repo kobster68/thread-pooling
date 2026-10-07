@@ -98,7 +98,9 @@ class TaskQueueTest {
 
         List<Runnable> items = new ArrayList<>();
         for (int i = 0; i < 1_000; i++) {
-            Runnable item = () -> { };
+            // each item must be a distinct object; a lambda that captures nothing is a single
+            // shared instance, which would make the exactly-once check below meaningless
+            Runnable item = new NumberedItem(i);
             items.add(item);
             queue.put(item);
             if (i % 50 == 0) {
@@ -116,5 +118,12 @@ class TaskQueueTest {
         Set<Runnable> distinct = Collections.newSetFromMap(new IdentityHashMap<>());
         distinct.addAll(taken);
         assertEquals(new HashSet<>(items), new HashSet<>(distinct), "every item put is taken exactly once");
+    }
+
+    /** A distinct no-op task, so identity checks can tell the items apart. */
+    private record NumberedItem(int number) implements Runnable {
+        @Override
+        public void run() {
+        }
     }
 }

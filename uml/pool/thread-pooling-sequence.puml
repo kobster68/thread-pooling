@@ -19,7 +19,7 @@ W1 -> Q : take()
 == Submit: one task per chunk ==
 loop for each chunk
   S -> P : submit(PrimeRangeTask)
-  P -> Q : put(task)\nnotifyAll()
+  P -> Q : put(task)\nnotify()
 end
 
 == Reuse: each worker takes the next task when it finishes one ==
