@@ -1,5 +1,9 @@
 package edu.rit.swen755.threadpool.pool;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
 /**
  * A fixed pool of worker threads that take tasks from a shared {@link TaskQueue} and reuse
  * themselves across tasks.
@@ -12,9 +16,17 @@ package edu.rit.swen755.threadpool.pool;
  * {@code wait()}/{@code notifyAll()} (inside {@link TaskQueue}) and {@link Thread#join()}; it uses
  * no executors, locks, atomics, or library queues from the JDK's concurrency utilities.
  *
- * <p>This is a stub until slice 1 lands.
  */
 public final class ThreadPool {
+
+    /** Queued once per worker by {@link #shutdown()}; a worker that takes it exits its loop. */
+    private static final Runnable SHUTDOWN_MARKER = () -> { };
+
+    private final TaskQueue queue = new TaskQueue();
+    private final List<Thread> workers = new ArrayList<>();
+
+    /** Guarded by {@code this}; once true, it never goes back to false. */
+    private boolean shutdown;
 
     /**
      * Creates and starts {@code size} worker threads.
@@ -24,9 +36,17 @@ public final class ThreadPool {
      * pool keeps its size and keeps reusing threads.
      *
      * @param size the number of worker threads to create
+     * @throws IllegalArgumentException if {@code size} is zero or negative
      */
     public ThreadPool(int size) {
-        throw new UnsupportedOperationException("TODO(slice 1: Godson)");
+        if (size <= 0) {
+            throw new IllegalArgumentException("pool size must be positive, was " + size);
+        }
+        for (int i = 0; i < size; i++) {
+            Thread worker = new Thread(new Worker(queue), "pool-worker-" + i);
+            workers.add(worker);
+            worker.start();
+        }
     }
 
     /**
@@ -38,11 +58,16 @@ public final class ThreadPool {
      * shutdown and runs, or the flag is already set and this method throws.
      *
      * @param task the task to run
+     * @throws NullPointerException  if {@code task} is null
      * @throws IllegalStateException if the pool has already been shut down, so that a task can
      *                               never be lost behind the shutdown markers
      */
-    public void submit(Runnable task) {
-        throw new UnsupportedOperationException("TODO(slice 1: Godson)");
+    public synchronized void submit(Runnable task) {
+        Objects.requireNonNull(task, "task");
+        if (shutdown) {
+            throw new IllegalStateException("cannot submit after shutdown()");
+        }
+        queue.put(task);
     }
 
     /**
@@ -55,8 +80,14 @@ public final class ThreadPool {
      * This method is idempotent: calling it more than once sets the flag and enqueues the markers
      * only on the first call and has no further effect.
      */
-    public void shutdown() {
-        throw new UnsupportedOperationException("TODO(slice 1: Godson)");
+    public synchronized void shutdown() {
+        if (shutdown) {
+            return;
+        }
+        shutdown = true;
+        for (int i = 0; i < workers.size(); i++) {
+            queue.put(SHUTDOWN_MARKER);
+        }
     }
 
     /**
@@ -73,7 +104,15 @@ public final class ThreadPool {
      * @throws InterruptedException  if the calling thread is interrupted while waiting
      */
     public void awaitTermination() throws InterruptedException {
-        throw new UnsupportedOperationException("TODO(slice 1: Godson)");
+        synchronized (this) {
+            if (!shutdown) {
+                throw new IllegalStateException("awaitTermination() called before shutdown()");
+            }
+        }
+        // join outside the lock so waiting here never blocks submit() or shutdown() callers
+        for (Thread worker : workers) {
+            worker.join();
+        }
     }
 
     /**
@@ -83,6 +122,42 @@ public final class ThreadPool {
      * @return the fixed worker-thread count
      */
     public int threadsCreated() {
-        throw new UnsupportedOperationException("TODO(slice 1: Godson)");
+        return workers.size();
+    }
+
+    /** One pool thread's loop: take a task, run it, and go back for the next until shut down. */
+    private static final class Worker implements Runnable {
+
+        private final TaskQueue queue;
+
+        Worker(TaskQueue queue) {
+            this.queue = queue;
+        }
+
+        @Override
+        public void run() {
+            try {
+                while (true) {
+                    Runnable task = queue.take();
+                    if (task == SHUTDOWN_MARKER) {
+                        return;
+                    }
+                    try {
+                        task.run();
+                    } catch (Throwable failure) {
+                        // report it and keep looping: a failing task must not kill its worker,
+                        // or the pool would quietly shrink
+                        System.err.println(Thread.currentThread().getName() + ": task failed: " + failure);
+                    }
+                    // an interrupt means "stop after the current task", even when more work is
+                    // queued (take() only notices an interrupt when it has to wait)
+                    if (Thread.currentThread().isInterrupted()) {
+                        return;
+                    }
+                }
+            } catch (InterruptedException e) {
+                // interrupted while waiting for work: leave the loop and let the thread end
+            }
+        }
     }
 }
