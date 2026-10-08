@@ -1,6 +1,5 @@
 package edu.rit.swen755.threadpool.primes;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -9,9 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * Acceptance tests for {@link Chunks#split(long, int)} (slice 2). Disabled until the slice lands.
+ * Acceptance and boundary tests for {@link Chunks#split(long, int)}.
  */
-@Disabled("TODO(slice 2: Kobe) — enable when implementing")
 class ChunksTest {
 
     @Test
@@ -49,10 +47,33 @@ class ChunksTest {
     @Test
     void rejectsNonPositiveCount() {
         assertThrows(IllegalArgumentException.class, () -> Chunks.split(1000, 0));
+        assertThrows(IllegalArgumentException.class, () -> Chunks.split(1000, -1));
     }
 
     @Test
     void rejectsNSmallerThanCount() {
         assertThrows(IllegalArgumentException.class, () -> Chunks.split(99, 100));
+        assertThrows(IllegalArgumentException.class, () -> Chunks.split(0, 1));
+        assertThrows(IllegalArgumentException.class, () -> Chunks.split(-1, 1));
+    }
+
+    @Test
+    void oneChunkCoversTheWholeRange() {
+        assertEquals(List.of(new Chunk(0, 1, 1005)), Chunks.split(1005, 1));
+        assertEquals(List.of(new Chunk(0, 1, 1)), Chunks.split(1, 1));
+    }
+
+    @Test
+    void oneNumberPerChunkWhenNEqualsCount() {
+        assertEquals(List.of(new Chunk(0, 1, 1), new Chunk(1, 2, 2),
+                new Chunk(2, 3, 3)), Chunks.split(3, 3));
+    }
+
+    @Test
+    void handlesTheLargestLongWithoutOverflow() {
+        long width = Long.MAX_VALUE / 2;
+        assertEquals(List.of(new Chunk(0, 1, width),
+                new Chunk(1, width + 1, Long.MAX_VALUE)), Chunks.split(Long.MAX_VALUE, 2));
+        assertEquals(List.of(new Chunk(0, 1, Long.MAX_VALUE)), Chunks.split(Long.MAX_VALUE, 1));
     }
 }
