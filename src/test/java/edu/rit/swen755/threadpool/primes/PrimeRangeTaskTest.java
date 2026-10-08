@@ -1,6 +1,5 @@
 package edu.rit.swen755.threadpool.primes;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -74,7 +73,6 @@ class PrimeRangeTaskTest {
     }
 
     @Test
-    @Disabled("TODO(slice 2: Kobe) — enable when implementing KnownPrimeCounts")
     void knownPrimeCountsReturnPublishedValuesAndEmptyForUnknown() {
         assertEquals(OptionalLong.of(78_498), KnownPrimeCounts.lookup(1_000_000));
         assertEquals(OptionalLong.of(664_579), KnownPrimeCounts.lookup(10_000_000));
@@ -82,6 +80,9 @@ class PrimeRangeTaskTest {
         assertEquals(OptionalLong.of(5_761_455), KnownPrimeCounts.lookup(100_000_000));
 
         assertFalse(KnownPrimeCounts.lookup(12_345).isPresent(), "an unknown N returns empty");
+        assertEquals(OptionalLong.empty(), KnownPrimeCounts.lookup(0));
+        assertEquals(OptionalLong.empty(), KnownPrimeCounts.lookup(-1));
+        assertEquals(OptionalLong.empty(), KnownPrimeCounts.lookup(Long.MAX_VALUE));
     }
 
     @Test
