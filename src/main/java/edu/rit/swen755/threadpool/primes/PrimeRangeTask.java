@@ -1,10 +1,12 @@
 package edu.rit.swen755.threadpool.primes;
 
+import java.util.Arrays;
+
 /**
  * Counts (and optionally keeps) the primes in one {@link Chunk}, as a {@link Runnable}.
  *
- * <p>This is the performance-critical unit of work. It is a stub until slice 2 lands;
- * the constructor stores the task's inputs, but {@link #run()} is not yet implemented.
+ * <p>This is the performance-critical unit of work. Each task scans its own range and
+ * publishes its result only after the scan is complete.
  */
 public final class PrimeRangeTask implements Runnable {
 
@@ -39,6 +41,47 @@ public final class PrimeRangeTask implements Runnable {
      */
     @Override
     public void run() {
-        throw new UnsupportedOperationException("TODO(slice 2: Kobe)");
+        long started = System.nanoTime();
+        long primeCount = 0;
+        long[] primes = new long[keepPrimes ? 16 : 0];
+        int keptCount = 0;
+
+        for (long number = chunk.first(); number <= chunk.last(); number++) {
+            if (isPrime(number)) {
+                primeCount++;
+                if (keepPrimes) {
+                    if (keptCount == primes.length) {
+                        primes = Arrays.copyOf(primes, Math.multiplyExact(primes.length, 2));
+                    }
+                    primes[keptCount++] = number;
+                }
+            }
+            // Stop before incrementing Long.MAX_VALUE, which would wrap around.
+            if (number == chunk.last()) {
+                break;
+            }
+        }
+
+        if (keepPrimes) {
+            primes = Arrays.copyOf(primes, keptCount);
+        }
+        long elapsed = System.nanoTime() - started;
+        slots[chunk.index()] = new ChunkResult(chunk.index(), chunk.first(), chunk.last(),
+                primeCount, Thread.currentThread().getName(), elapsed, primes);
+    }
+
+    private static boolean isPrime(long number) {
+        if (number < 2) {
+            return false;
+        }
+        if (number % 2 == 0) {
+            return number == 2;
+        }
+        for (long divisor = 3; divisor <= number / divisor; divisor += 2) {
+            if (number % divisor == 0) {
+                return false;
+            }
+        }
+        return true;
     }
 }
