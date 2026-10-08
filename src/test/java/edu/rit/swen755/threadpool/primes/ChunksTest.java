@@ -40,8 +40,10 @@ class ChunksTest {
         assertEquals(991, last.first());
         assertEquals(1005, last.last());
         assertEquals(15, last.last() - last.first() + 1, "the last chunk should hold the extra 5");
-        assertEquals(10, chunks.get(0).last() - chunks.get(0).first() + 1,
-                "earlier chunks keep the base width");
+        for (int i = 0; i < 99; i++) {
+            assertEquals(new Chunk(i, i * 10L + 1, (i + 1L) * 10), chunks.get(i),
+                    "every earlier chunk keeps the base width");
+        }
     }
 
     @Test
