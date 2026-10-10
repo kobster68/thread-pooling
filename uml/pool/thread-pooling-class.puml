@@ -1,0 +1,118 @@
+@startuml thread-pooling-class
+title Thread Pooling: class diagram
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+class Main {
+  +{static} POOL_SIZE : int = 10
+  +{static} CHUNK_COUNT : int = 100
+  +{static} DEFAULT_N : long = 50_000_000
+  +{static} run(args : String[], out : PrintStream, err : PrintStream) : int
+  +{static} main(args : String[]) : void
+}
+
+package pool {
+  class ThreadPool {
+    -{static} SHUTDOWN_MARKER : Runnable
+    -queue : TaskQueue
+    -workers : List<Thread>
+    -shutdown : boolean
+    +ThreadPool(size : int)
+    +submit(task : Runnable) : void
+    +shutdown() : void
+    +awaitTermination() : void
+    +threadsCreated() : int
+  }
+  class "ThreadPool.Worker" as Worker <<private nested>> {
+    -queue : TaskQueue
+    +run() : void
+  }
+  class TaskQueue {
+    -tasks : Deque<Runnable>
+    +put(task : Runnable) : void
+    +take() : Runnable
+  }
+}
+
+package primes {
+  class Chunk <<record>> {
+    index : int
+    first : long
+    last : long
+  }
+  class Chunks {
+    +{static} split(n : long, count : int) : List<Chunk>
+  }
+  class PrimeRangeTask {
+    +PrimeRangeTask(chunk : Chunk, keepPrimes : boolean, slots : ChunkResult[])
+    +run() : void
+  }
+  class ChunkResult <<record>> {
+    index : int
+    first : long
+    last : long
+    primeCount : long
+    workerName : String
+    elapsedNanos : long
+    primes : long[]
+  }
+  class KnownPrimeCounts {
+    +{static} lookup(n : long) : OptionalLong
+  }
+}
+
+package run {
+  interface ExecutionStrategy {
+    +run(chunks : List<Chunk>, keepPrimes : boolean) : RunReport
+  }
+  class SingleThreadStrategy
+  class ThreadPoolStrategy {
+    +ThreadPoolStrategy(poolSize : int)
+  }
+  class ThreadPerChunkStrategy
+  class RunReport <<record>> {
+    strategy : String
+    wallNanos : long
+    threadsUsed : int
+    results : List<ChunkResult>
+    +totalPrimes() : long
+    +chunksPerThread() : SortedMap<String, Integer>
+  }
+  class Compare {
+    +{static} runAll(chunks : List<Chunk>, poolSize : int, progress : PrintStream) : List<RunReport>
+    +{static} formatTable(reports : List<RunReport>) : String
+    +{static} formatChunkMap(poolReport : RunReport) : String
+  }
+}
+
+interface Runnable <<java.lang>>
+
+ThreadPool +-- Worker
+ThreadPool *-- "1" TaskQueue : owns
+ThreadPool *-- "size" Worker : creates once,\nruns each on a named Thread
+Worker ..|> Runnable
+Worker --> TaskQueue : take()
+TaskQueue o-- "*" Runnable : FIFO
+
+PrimeRangeTask ..|> Runnable
+PrimeRangeTask --> "1" Chunk
+PrimeRangeTask ..> ChunkResult : writes slots[index]
+Chunks ..> Chunk : creates
+
+SingleThreadStrategy ..|> ExecutionStrategy
+ThreadPoolStrategy ..|> ExecutionStrategy
+ThreadPerChunkStrategy ..|> ExecutionStrategy
+ExecutionStrategy ..> RunReport : returns
+RunReport o-- "*" ChunkResult
+ThreadPoolStrategy ..> ThreadPool : submits one\nPrimeRangeTask per chunk
+ThreadPoolStrategy ..> PrimeRangeTask
+SingleThreadStrategy ..> PrimeRangeTask
+ThreadPerChunkStrategy ..> PrimeRangeTask : one new Thread\nper chunk
+Compare ..> ExecutionStrategy : runs all three
+
+Main ..> Chunks
+Main ..> Compare
+Main ..> ExecutionStrategy
+Main ..> KnownPrimeCounts
+@enduml

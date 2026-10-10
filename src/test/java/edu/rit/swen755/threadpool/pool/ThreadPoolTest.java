@@ -1,9 +1,13 @@
 package edu.rit.swen755.threadpool.pool;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -16,15 +20,23 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Acceptance tests for {@link ThreadPool} (slice 1). Disabled until the slice lands.
+ * Tests for {@link ThreadPool}: worker reuse, draining on shutdown, surviving a failing task,
+ * the shutdown and argument rules, worker naming, and stopping a worker on interrupt.
  *
  * <p>The tasks sleep about 20 ms each so that one worker cannot drain the whole queue alone;
  * both workers of a two-worker pool are forced to take part. Assertions are made only after
  * {@code awaitTermination()}, and every test is bounded by a {@link Timeout} so a hang fails
  * the build rather than blocking it.
  */
-@Disabled("TODO(slice 1: Godson) — enable when implementing")
 class ThreadPoolTest {
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
     /** A task that records the worker that ran it after a short, pool-sharing sleep. */
     private static Runnable recordingTask(List<String> workerNames) {
@@ -129,5 +141,139 @@ class ThreadPoolTest {
 
         assertEquals(4, ran.size(), "calling shutdown twice is harmless and loses no work");
         assertTrue(pool.threadsCreated() == 2);
+    }
+
+    @Test
+    @ResourceLock(Resources.SYSTEM_ERR) // swaps or writes the global System.err
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void aFailingTaskPrintsOneTaskFailedLineToStandardError() throws InterruptedException {
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        PrintStream originalErr = System.err;
+        System.setErr(new PrintStream(captured, true, StandardCharsets.UTF_8));
+        try {
+            ThreadPool pool = new ThreadPool(1);
+            pool.submit(() -> {
+                throw new IllegalStateException("boom");
+            });
+            pool.shutdown();
+            pool.awaitTermination();
+        } finally {
+            System.setErr(originalErr);
+        }
+
+        List<String> failureLines = captured.toString(StandardCharsets.UTF_8).lines()
+                .filter(line -> line.contains("task failed"))
+                .toList();
+        assertEquals(1, failureLines.size(), "exactly one line per failed task: " + failureLines);
+        String line = failureLines.get(0);
+        assertTrue(line.startsWith("pool-worker-0: task failed: "), line);
+        assertTrue(line.contains("boom"), line);
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void submitRejectsNull() throws InterruptedException {
+        ThreadPool pool = new ThreadPool(1);
+        try {
+            assertThrows(NullPointerException.class, () -> pool.submit(null));
+        } finally {
+            pool.shutdown();
+            pool.awaitTermination();
+        }
+    }
+
+    @Test
+    void rejectsAPoolWithNoWorkers() {
+        assertThrows(IllegalArgumentException.class, () -> new ThreadPool(0));
+        assertThrows(IllegalArgumentException.class, () -> new ThreadPool(-1));
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void aTenWorkerPoolRunsAHundredTasksOnOnlyItsOwnNamedWorkers() throws InterruptedException {
+        ThreadPool pool = new ThreadPool(10);
+        List<String> workerNames = Collections.synchronizedList(new ArrayList<>());
+
+        for (int i = 0; i < 100; i++) {
+            pool.submit(() -> workerNames.add(Thread.currentThread().getName()));
+        }
+        pool.shutdown();
+        pool.awaitTermination();
+
+        assertEquals(100, workerNames.size(), "all 100 tasks should run");
+        assertEquals(10, pool.threadsCreated(), "a pool of 10 creates exactly 10 threads");
+        Set<String> allowed = new HashSet<>();
+        for (int i = 0; i < 10; i++) {
+            allowed.add("pool-worker-" + i);
+        }
+        assertTrue(allowed.containsAll(workerNames), "only the pool's own workers ran tasks: " + new HashSet<>(workerNames));
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void anInterruptedWorkerStopsAfterItsCurrentTaskAndTheRestStillRun() throws InterruptedException {
+        ThreadPool pool = new ThreadPool(2);
+        List<String> interrupted = Collections.synchronizedList(new ArrayList<>());
+        List<String> laterWorkers = Collections.synchronizedList(new ArrayList<>());
+
+        // the first task holds its worker for 100 ms, then interrupts it; the later tasks take
+        // 20 ms each, so work is still queued when the interrupted worker comes back for more
+        pool.submit(() -> {
+            interrupted.add(Thread.currentThread().getName());
+            sleepQuietly(100);
+            Thread.currentThread().interrupt();
+        });
+        for (int i = 0; i < 10; i++) {
+            pool.submit(() -> {
+                sleepQuietly(20);
+                laterWorkers.add(Thread.currentThread().getName());
+            });
+        }
+        pool.shutdown();
+        pool.awaitTermination();
+
+        assertEquals(10, laterWorkers.size(), "the other worker still runs every remaining task");
+        assertTrue(!laterWorkers.contains(interrupted.get(0)),
+                "the interrupted worker must stop after its current task, but it also ran: " + laterWorkers);
+    }
+
+    @Test
+    @ResourceLock(Resources.SYSTEM_ERR) // swaps or writes the global System.err
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void anErrorFromATaskIsNotSwallowedAndEndsItsWorker() throws InterruptedException {
+        ThreadPool pool = new ThreadPool(1);
+        List<String> ranAfter = Collections.synchronizedList(new ArrayList<>());
+
+        pool.submit(() -> {
+            throw new AssertionError("the JVM is in trouble");
+        });
+        pool.submit(() -> ranAfter.add("ran"));
+        pool.shutdown();
+        pool.awaitTermination();
+
+        assertTrue(ranAfter.isEmpty(),
+                "an Error is not an ordinary task failure: the worker should stop, not carry on");
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void awaitTerminationFromInsideAPoolTaskThrowsInsteadOfHanging() throws InterruptedException {
+        ThreadPool[] holder = new ThreadPool[1];
+        List<Throwable> thrown = Collections.synchronizedList(new ArrayList<>());
+        holder[0] = new ThreadPool(1);
+
+        holder[0].submit(() -> {
+            holder[0].shutdown();
+            try {
+                holder[0].awaitTermination();
+            } catch (Throwable t) {
+                thrown.add(t);
+            }
+        });
+        holder[0].shutdown();
+        holder[0].awaitTermination();
+
+        assertEquals(1, thrown.size(), "a worker cannot wait for itself to finish");
+        assertTrue(thrown.get(0) instanceof IllegalStateException, "got " + thrown.get(0));
     }
 }
