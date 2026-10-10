@@ -1,7 +1,7 @@
 package edu.rit.swen755.threadpool.primes;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
 import java.util.OptionalLong;
@@ -9,13 +9,15 @@ import java.util.OptionalLong;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
- * Acceptance tests for {@link PrimeRangeTask} and {@link KnownPrimeCounts} (slice 2). Disabled
- * until the slice lands.
+ * Acceptance and boundary tests for {@link PrimeRangeTask} and {@link KnownPrimeCounts}.
  */
-@Disabled("TODO(slice 2: Kobe) — enable when implementing")
+@Timeout(10)
 class PrimeRangeTaskTest {
 
     @Test
@@ -57,8 +59,8 @@ class PrimeRangeTaskTest {
         ChunkResult[] slots = new ChunkResult[3];
         new PrimeRangeTask(new Chunk(1, 11, 20), false, slots).run();
 
-        assertEquals(null, slots[0], "a task must not touch another task's slot");
-        assertEquals(null, slots[2], "a task must not touch another task's slot");
+        assertNull(slots[0], "a task must not touch another task's slot");
+        assertNull(slots[2], "a task must not touch another task's slot");
         assertEquals(1, slots[1].index());
         assertEquals(Thread.currentThread().getName(), slots[1].workerName(),
                 "the result records the thread that ran the task");
@@ -82,5 +84,108 @@ class PrimeRangeTaskTest {
         assertEquals(OptionalLong.of(5_761_455), KnownPrimeCounts.lookup(100_000_000));
 
         assertFalse(KnownPrimeCounts.lookup(12_345).isPresent(), "an unknown N returns empty");
+        assertEquals(OptionalLong.empty(), KnownPrimeCounts.lookup(0));
+        assertEquals(OptionalLong.empty(), KnownPrimeCounts.lookup(-1));
+        assertEquals(OptionalLong.empty(), KnownPrimeCounts.lookup(Long.MAX_VALUE));
+    }
+
+    @Test
+    void singleNumberRangesHandlePrimesAndPerfectSquares() {
+        for (long number : new long[]{1, 2, 3, 4, 9, 25, 49, 97, 121}) {
+            boolean prime = number == 2 || number == 3 || number == 97;
+            ChunkResult[] slots = new ChunkResult[1];
+            new PrimeRangeTask(new Chunk(0, number, number), true, slots).run();
+            assertEquals(prime ? 1 : 0, slots[0].primeCount(), "number: " + number);
+            assertArrayEquals(prime ? new long[]{number} : new long[0], slots[0].primes());
+        }
+    }
+
+    @Test
+    void retainedPrimesGrowBeyondTheInitialBuffer() {
+        ChunkResult[] slots = new ChunkResult[1];
+        new PrimeRangeTask(new Chunk(0, 1, 100), true, slots).run();
+        assertEquals(25, slots[0].primeCount());
+        assertArrayEquals(new long[]{2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37,
+                41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97}, slots[0].primes());
+    }
+
+    @Test
+    void preservesExistingResultsAndCopiesChunkBounds() {
+        ChunkResult neighbor = new ChunkResult(0, 1, 10, 4, "other-worker", 0, new long[0]);
+        ChunkResult[] slots = {neighbor, null};
+        new PrimeRangeTask(new Chunk(1, 11, 20), true, slots).run();
+        assertSame(neighbor, slots[0]);
+        assertEquals(11, slots[1].first());
+        assertEquals(20, slots[1].last());
+        assertArrayEquals(new long[]{11, 13, 17, 19}, slots[1].primes());
+    }
+
+    @Test
+    void rangeEndingAtLargestLongTerminatesWithoutWrapping() {
+        ChunkResult[] slots = new ChunkResult[1];
+        // Long.MAX_VALUE is divisible by 7, so this also runs quickly.
+        new PrimeRangeTask(new Chunk(0, Long.MAX_VALUE - 1, Long.MAX_VALUE), true, slots).run();
+        assertEquals(0, slots[0].primeCount());
+        assertArrayEquals(new long[0], slots[0].primes());
+    }
+
+    @Test
+    void handlesPrimeValuesAboveTheIntRange() {
+        ChunkResult[] slots = new ChunkResult[1];
+        new PrimeRangeTask(new Chunk(0, 4_294_967_290L, 4_294_967_292L), true, slots).run();
+        assertEquals(1, slots[0].primeCount());
+        assertArrayEquals(new long[]{4_294_967_291L}, slots[0].primes());
+    }
+
+    @Test
+    void aRangeWithNoPrimesReturnsAnEmptyArrayInBothModes() {
+        for (boolean keepPrimes : new boolean[]{false, true}) {
+            ChunkResult[] slots = new ChunkResult[1];
+            new PrimeRangeTask(new Chunk(0, 14, 16), keepPrimes, slots).run();
+            assertEquals(0, slots[0].primeCount());
+            assertArrayEquals(new long[0], slots[0].primes());
+        }
+    }
+
+    @Test
+    void concurrentTasksPublishTheirOwnResultsAfterJoining() throws InterruptedException {
+        List<Chunk> chunks = Chunks.split(1000, 10);
+        ChunkResult[] slots = new ChunkResult[chunks.size()];
+        Thread[] threads = new Thread[chunks.size()];
+        for (Chunk chunk : chunks) {
+            threads[chunk.index()] = new Thread(new PrimeRangeTask(chunk, true, slots),
+                    "prime-test-" + chunk.index());
+        }
+        try {
+            for (Thread thread : threads) {
+                thread.start();
+            }
+            for (Thread thread : threads) {
+                thread.join();
+            }
+
+            long total = 0;
+            long previousPrime = 1;
+            for (Chunk chunk : chunks) {
+                ChunkResult result = slots[chunk.index()];
+                assertNotNull(result, "each task must publish a result");
+                assertEquals(chunk.index(), result.index());
+                assertEquals(chunk.first(), result.first());
+                assertEquals(chunk.last(), result.last());
+                assertEquals(threads[chunk.index()].getName(), result.workerName());
+                assertEquals(result.primeCount(), result.primes().length);
+                total += result.primeCount();
+                for (long prime : result.primes()) {
+                    assertTrue(prime >= chunk.first() && prime <= chunk.last());
+                    assertTrue(prime > previousPrime, "combined primes must remain in order");
+                    previousPrime = prime;
+                }
+            }
+            assertEquals(168, total, "there are 168 primes through 1000");
+        } finally {
+            for (Thread thread : threads) {
+                thread.join();
+            }
+        }
     }
 }

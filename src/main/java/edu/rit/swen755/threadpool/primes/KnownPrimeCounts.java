@@ -5,7 +5,7 @@ import java.util.OptionalLong;
 /**
  * Published prime-counting-function values, used to check the program's own count.
  *
- * <p>This is a stub until slice 2 lands.
+ * <p>Only the four reference bounds used by the assignment are recognised.
  */
 public final class KnownPrimeCounts {
 
@@ -24,6 +24,18 @@ public final class KnownPrimeCounts {
      * @return the known prime count for {@code n}, or empty if {@code n} is not a recognised value
      */
     public static OptionalLong lookup(long n) {
-        throw new UnsupportedOperationException("TODO(slice 2: Kobe)");
+        if (n == 1_000_000L) {
+            return OptionalLong.of(78_498);
+        }
+        if (n == 10_000_000L) {
+            return OptionalLong.of(664_579);
+        }
+        if (n == 50_000_000L) {
+            return OptionalLong.of(3_001_134);
+        }
+        if (n == 100_000_000L) {
+            return OptionalLong.of(5_761_455);
+        }
+        return OptionalLong.empty();
     }
 }

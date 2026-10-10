@@ -1,11 +1,12 @@
 package edu.rit.swen755.threadpool.primes;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Splits {@code [1, N]} into contiguous, inclusive chunks of equal width.
  *
- * <p>This is the workload partitioner. It is a stub until slice 2 lands.
+ * <p>This is the workload partitioner. Any remainder belongs to the last chunk.
  */
 public final class Chunks {
 
@@ -29,6 +30,17 @@ public final class Chunks {
      * @throws IllegalArgumentException if {@code count <= 0} or {@code n < count}
      */
     public static List<Chunk> split(long n, int count) {
-        throw new UnsupportedOperationException("TODO(slice 2: Kobe)");
+        if (count <= 0 || n < count) {
+            throw new IllegalArgumentException("count must be positive and n must be at least count");
+        }
+
+        long width = n / count;
+        List<Chunk> chunks = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            long first = i * width + 1;
+            long last = i == count - 1 ? n : (i + 1L) * width;
+            chunks.add(new Chunk(i, first, last));
+        }
+        return chunks;
     }
 }
