@@ -63,11 +63,13 @@ public final class ThreadPool {
         try {
             for (int i = 0; i < size; i++) {
                 Thread worker = new Thread(new Worker(queue), "pool-worker-" + i);
-                worker.start();
+                // list it before starting it, so cleanup can never miss a running thread
                 workers.add(worker);
+                worker.start();
             }
         } catch (RuntimeException | Error failure) {
-            // no caller can reach this half-built pool to shut it down, so do it here
+            // no caller can reach this half-built pool to shut it down, so do it here. One marker
+            // per listed thread: if the last one never started, its marker just goes unused.
             for (int i = 0; i < workers.size(); i++) {
                 queue.put(SHUTDOWN_MARKER);
             }
