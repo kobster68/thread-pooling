@@ -104,7 +104,10 @@ working at once.
 
 ## Results
 
-<!-- TODO(slice 4: Mallikarjuna) -->
+The comparison runs the same 100 chunks serially on the calling thread, through a reusable
+10-worker thread pool, and on 100 one-shot threads (one per chunk). After an untimed warm-up over
+the first million integers, it measures each complete run and reports wall time, participating
+threads, and chunks handled per thread; the chunk-to-worker map makes reuse by the pool visible.
 
 ## Trade-offs
 

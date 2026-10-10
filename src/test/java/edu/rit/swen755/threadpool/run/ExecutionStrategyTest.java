@@ -2,7 +2,6 @@ package edu.rit.swen755.threadpool.run;
 
 import edu.rit.swen755.threadpool.primes.Chunk;
 import edu.rit.swen755.threadpool.primes.Chunks;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -17,9 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Acceptance tests for the three {@link ExecutionStrategy} implementations and the derived views
  * on {@link RunReport} (slice 3). These run real prime tasks on the real pool, so they need
- * slices 1 and 2 as well. Disabled until slice 3 lands.
+ * slices 1 and 2 as well.
  */
-@Disabled("TODO(slice 3: Chase) — enable when implementing")
 class ExecutionStrategyTest {
 
     /** Range used for the correctness checks; the count is the known prime count for 10^6. */
@@ -116,13 +114,37 @@ class ExecutionStrategyTest {
     void everyResultSlotIsFilledAndInChunkOrder() {
         List<Chunk> chunks = Chunks.split(1000, 100);
 
-        List<edu.rit.swen755.threadpool.primes.ChunkResult> results =
-                new ThreadPoolStrategy(10).run(chunks, false).results();
+        List<RunReport> reports = List.of(
+                new SingleThreadStrategy().run(chunks, false),
+                new ThreadPoolStrategy(10).run(chunks, false),
+                new ThreadPerChunkStrategy().run(chunks, false));
+        for (RunReport report : reports) {
+            List<edu.rit.swen755.threadpool.primes.ChunkResult> results = report.results();
+            assertEquals(100, results.size());
+            assertTrue(results.stream().allMatch(Objects::nonNull), "no slot may be left empty");
+            for (int i = 0; i < results.size(); i++) {
+                assertEquals(i, results.get(i).index(), "results are in chunk order");
+            }
+        }
+    }
 
-        assertEquals(100, results.size());
-        assertTrue(results.stream().allMatch(Objects::nonNull), "no slot may be left empty");
-        for (int i = 0; i < results.size(); i++) {
-            assertEquals(i, results.get(i).index(), "results are in chunk order");
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void eachStrategyRejectsAnUnfilledResultSlot() {
+        List<Chunk> chunks = new java.util.ArrayList<>(Chunks.split(1000, 100));
+        chunks.set(1, new Chunk(0, chunks.get(1).first(), chunks.get(1).last()));
+
+        assertTrue(throwsMissingResult(() -> new SingleThreadStrategy().run(chunks, false)));
+        assertTrue(throwsMissingResult(() -> new ThreadPoolStrategy(10).run(chunks, false)));
+        assertTrue(throwsMissingResult(() -> new ThreadPerChunkStrategy().run(chunks, false)));
+    }
+
+    private static boolean throwsMissingResult(Runnable run) {
+        try {
+            run.run();
+            return false;
+        } catch (IllegalStateException expected) {
+            return expected.getMessage().contains("result slot 1");
         }
     }
 }
