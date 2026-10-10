@@ -4,13 +4,11 @@ import edu.rit.swen755.threadpool.primes.ChunkResult;
 
 import java.util.List;
 import java.util.SortedMap;
+import java.util.TreeMap;
 
 /**
  * The result of one {@link ExecutionStrategy} run: its name, wall time, threads used, and the
  * per-chunk results in chunk order.
- *
- * <p>The record itself is complete. The two derived views, {@link #totalPrimes()} and
- * {@link #chunksPerThread()}, are stubs until slice 3 lands.
  *
  * @param strategy    the strategy name, equal to the matching {@code --mode} value
  *                    ({@code single}, {@code pool}, or {@code per-chunk})
@@ -28,7 +26,7 @@ public record RunReport(String strategy, long wallNanos, int threadsUsed, List<C
      * @return the sum of every chunk's prime count
      */
     public long totalPrimes() {
-        throw new UnsupportedOperationException("TODO(slice 3: Chase)");
+        return results.stream().mapToLong(ChunkResult::primeCount).sum();
     }
 
     /**
@@ -46,6 +44,52 @@ public record RunReport(String strategy, long wallNanos, int threadsUsed, List<C
      *         then numeric suffix
      */
     public SortedMap<String, Integer> chunksPerThread() {
-        throw new UnsupportedOperationException("TODO(slice 3: Chase)");
+        SortedMap<String, Integer> chunksByThread = new TreeMap<>(RunReport::compareThreadNames);
+        for (ChunkResult result : results) {
+            chunksByThread.merge(result.workerName(), 1, Integer::sum);
+        }
+        return chunksByThread;
+    }
+
+    private static int compareThreadNames(String left, String right) {
+        ThreadName leftName = ThreadName.parse(left);
+        ThreadName rightName = ThreadName.parse(right);
+        int prefixOrder = leftName.prefix().compareTo(rightName.prefix());
+        if (prefixOrder != 0) {
+            return prefixOrder;
+        }
+        if (leftName.numericSuffix() == null || rightName.numericSuffix() == null) {
+            return left.compareTo(right);
+        }
+        int suffixOrder = compareNumbers(leftName.numericSuffix(), rightName.numericSuffix());
+        return suffixOrder != 0 ? suffixOrder : left.compareTo(right);
+    }
+
+    private static int compareNumbers(String left, String right) {
+        String normalizedLeft = stripLeadingZeroes(left);
+        String normalizedRight = stripLeadingZeroes(right);
+        int lengthOrder = Integer.compare(normalizedLeft.length(), normalizedRight.length());
+        return lengthOrder != 0 ? lengthOrder : normalizedLeft.compareTo(normalizedRight);
+    }
+
+    private static String stripLeadingZeroes(String number) {
+        int firstNonZero = 0;
+        while (firstNonZero < number.length() - 1 && number.charAt(firstNonZero) == '0') {
+            firstNonZero++;
+        }
+        return number.substring(firstNonZero);
+    }
+
+    private record ThreadName(String prefix, String numericSuffix) {
+        private static ThreadName parse(String name) {
+            int suffixStart = name.length();
+            while (suffixStart > 0 && Character.isDigit(name.charAt(suffixStart - 1))) {
+                suffixStart--;
+            }
+            if (suffixStart == name.length()) {
+                return new ThreadName(name, null);
+            }
+            return new ThreadName(name.substring(0, suffixStart), name.substring(suffixStart));
+        }
     }
 }

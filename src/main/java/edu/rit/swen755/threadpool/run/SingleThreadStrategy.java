@@ -1,6 +1,8 @@
 package edu.rit.swen755.threadpool.run;
 
 import edu.rit.swen755.threadpool.primes.Chunk;
+import edu.rit.swen755.threadpool.primes.ChunkResult;
+import edu.rit.swen755.threadpool.primes.PrimeRangeTask;
 
 import java.util.List;
 
@@ -8,7 +10,7 @@ import java.util.List;
  * Baseline strategy: runs every chunk on the calling thread, one after another.
  *
  * <p>Its reported name is {@code single} and its {@code threadsUsed} is always 1, since no
- * extra threads are started. This is a stub until slice 3 lands.
+ * extra threads are started.
  */
 public final class SingleThreadStrategy implements ExecutionStrategy {
 
@@ -25,6 +27,14 @@ public final class SingleThreadStrategy implements ExecutionStrategy {
      */
     @Override
     public RunReport run(List<Chunk> chunks, boolean keepPrimes) {
-        throw new UnsupportedOperationException("TODO(slice 3: Chase)");
+        ChunkResult[] results = new ChunkResult[chunks.size()];
+        long started = System.nanoTime();
+        for (Chunk chunk : chunks) {
+            new PrimeRangeTask(chunk, keepPrimes, results).run();
+        }
+        long elapsed = System.nanoTime() - started;
+
+        List<ChunkResult> orderedResults = RunResults.completedInOrder(results);
+        return new RunReport(NAME, elapsed, 1, orderedResults);
     }
 }
