@@ -1,6 +1,24 @@
 package edu.rit.swen755.threadpool;
 
+import edu.rit.swen755.threadpool.primes.Chunk;
+import edu.rit.swen755.threadpool.primes.ChunkResult;
+import edu.rit.swen755.threadpool.primes.Chunks;
+import edu.rit.swen755.threadpool.primes.KnownPrimeCounts;
+import edu.rit.swen755.threadpool.run.Compare;
+import edu.rit.swen755.threadpool.run.ExecutionStrategy;
+import edu.rit.swen755.threadpool.run.RunReport;
+import edu.rit.swen755.threadpool.run.SingleThreadStrategy;
+import edu.rit.swen755.threadpool.run.ThreadPerChunkStrategy;
+import edu.rit.swen755.threadpool.run.ThreadPoolStrategy;
+
+import java.io.BufferedWriter;
+import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
+import java.util.OptionalLong;
 
 /**
  * Command-line entry point for the thread-pooling prime counter.
@@ -9,7 +27,7 @@ import java.io.PrintStream;
  * {@link #CHUNK_COUNT} chunks and running them through one of several execution strategies. The
  * pool size and chunk count are fixed constants, not options.
  *
- * <p>The final command-line contract (implemented in slice 4) is:
+ * <p>The command-line contract is:
  * <ul>
  *   <li>{@code --n <N>}: the upper bound of the range. Default {@value #DEFAULT_N}. Must be at
  *       least {@link #CHUNK_COUNT}; a smaller value is a usage error.</li>
@@ -40,14 +58,21 @@ public final class Main {
     private Main() {
     }
 
+    private static final String USAGE = String.join(System.lineSeparator(),
+            "usage: java -jar target/thread-pooling.jar [--n <N>] [--mode <mode>] [--output <file>]",
+            "  --n <N>          upper bound of the range [1, N]; default " + DEFAULT_N
+                    + ", minimum " + CHUNK_COUNT,
+            "  --mode <mode>    single | pool | per-chunk | compare; default compare",
+            "  --output <file>  write every prime in [1, N], one per line, ascending;",
+            "                   not allowed with --mode compare");
+
     /**
      * Runs the program and returns its exit code.
      *
-     * <p>For now this is a tracer. With no arguments it prints the fixed configuration to
-     * {@code out} and returns {@code 0}. With any arguments it prints a note that argument parsing
-     * and the run modes are not implemented yet to {@code err} and returns {@code 2}, since it
-     * cannot yet honour a request. Slice 4 replaces the body with the full command-line contract
-     * described on this class.
+     * <p>Parses the arguments, splits {@code [1, N]} into {@link #CHUNK_COUNT} chunks, and runs
+     * the requested mode. {@code compare} prints the comparison table. The other modes print a
+     * one-line summary; {@code pool} follows it with the chunk-to-worker map. Every mode ends with
+     * a check of the count against the published value, when there is one for {@code N}.
      *
      * @param args the command-line arguments
      * @param out  the stream for normal output
@@ -55,18 +80,110 @@ public final class Main {
      * @return the process exit code: {@code 0} success, {@code 2} usage error, {@code 1} runtime failure
      */
     public static int run(String[] args, PrintStream out, PrintStream err) {
-        if (args.length > 0) {
-            err.println("argument parsing and run modes are not implemented yet.");
-            return 2;
+        long n = DEFAULT_N;
+        String mode = "compare";
+        String output = null;
+
+        for (int i = 0; i < args.length; i += 2) {
+            String flag = args[i];
+            if (!flag.equals("--n") && !flag.equals("--mode") && !flag.equals("--output")) {
+                return usageError(err, "unknown argument: " + flag);
+            }
+            if (i + 1 >= args.length) {
+                return usageError(err, flag + " needs a value");
+            }
+            String value = args[i + 1];
+            switch (flag) {
+                case "--n" -> {
+                    try {
+                        n = Long.parseLong(value);
+                    } catch (NumberFormatException notANumber) {
+                        return usageError(err, "--n must be a whole number, got: " + value);
+                    }
+                }
+                case "--mode" -> mode = value;
+                default -> output = value;
+            }
         }
-        out.println("thread-pooling tactic (SWEN-755)");
-        out.println("pool size:            " + POOL_SIZE + " worker threads");
-        out.println("chunk count:          " + CHUNK_COUNT + " chunks");
-        out.println("default N:            " + DEFAULT_N);
-        out.println("available processors: " + Runtime.getRuntime().availableProcessors());
-        // TODO(slice 4: Mallikarjuna): parse --n/--mode/--output, dispatch the strategies and
-        // Compare, print the single-mode summary and known-pi check, and write the primes file.
-        return 0;
+        if (n < CHUNK_COUNT) {
+            return usageError(err, "--n must be at least " + CHUNK_COUNT + ", got: " + n);
+        }
+        if (!List.of("single", "pool", "per-chunk", "compare").contains(mode)) {
+            return usageError(err, "unknown mode: " + mode);
+        }
+        if (mode.equals("compare") && output != null) {
+            return usageError(err, "--output cannot be combined with --mode compare");
+        }
+
+        out.println("thread-pooling tactic (SWEN-755): primes in [1, " + n + "], "
+                + CHUNK_COUNT + " chunks, pool of " + POOL_SIZE + " worker threads");
+        try {
+            List<Chunk> chunks = Chunks.split(n, CHUNK_COUNT);
+            long total;
+            if (mode.equals("compare")) {
+                List<RunReport> reports = Compare.runAll(chunks, POOL_SIZE, out);
+                out.println(Compare.formatTable(reports));
+                total = reports.get(0).totalPrimes();
+                for (RunReport report : reports) {
+                    if (report.totalPrimes() != total) {
+                        err.println("error: the strategies disagree on the prime count");
+                        return 1;
+                    }
+                }
+                out.println("all three strategies found " + total + " primes");
+            } else {
+                ExecutionStrategy strategy = switch (mode) {
+                    case "single" -> new SingleThreadStrategy();
+                    case "pool" -> new ThreadPoolStrategy(POOL_SIZE);
+                    default -> new ThreadPerChunkStrategy();
+                };
+                RunReport report = strategy.run(chunks, output != null);
+                total = report.totalPrimes();
+                out.println(String.format(Locale.ROOT, "%s: %d primes in %.3f ms on %d thread(s)",
+                        report.strategy(), total, report.wallNanos() / 1_000_000.0,
+                        report.threadsUsed()));
+                if (mode.equals("pool")) {
+                    out.println(Compare.formatChunkMap(report));
+                }
+                if (output != null) {
+                    writePrimes(report, Path.of(output));
+                    out.println("wrote " + total + " primes to " + output);
+                }
+            }
+
+            OptionalLong known = KnownPrimeCounts.lookup(n);
+            if (known.isEmpty()) {
+                out.println("known-pi check: no published value for N = " + n);
+            } else if (known.getAsLong() == total) {
+                out.println("known-pi check: OK, pi(" + n + ") = " + total);
+            } else {
+                err.println("error: known-pi check failed, expected " + known.getAsLong()
+                        + " but counted " + total);
+                return 1;
+            }
+            return 0;
+        } catch (IOException | RuntimeException failure) {
+            err.println("error: " + failure);
+            return 1;
+        }
+    }
+
+    private static int usageError(PrintStream err, String message) {
+        err.println("error: " + message);
+        err.println(USAGE);
+        return 2;
+    }
+
+    /** Writes the primes one per line; chunks are in order and each chunk's primes are sorted. */
+    private static void writePrimes(RunReport report, Path file) throws IOException {
+        try (BufferedWriter writer = Files.newBufferedWriter(file)) {
+            for (ChunkResult result : report.results()) {
+                for (long prime : result.primes()) {
+                    writer.write(Long.toString(prime));
+                    writer.newLine();
+                }
+            }
+        }
     }
 
     /**
