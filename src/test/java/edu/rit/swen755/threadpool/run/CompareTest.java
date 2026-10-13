@@ -3,7 +3,6 @@ package edu.rit.swen755.threadpool.run;
 import edu.rit.swen755.threadpool.primes.Chunk;
 import edu.rit.swen755.threadpool.primes.Chunks;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.Timeout;
@@ -20,9 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Acceptance tests for {@link Compare} (slice 3). These run all three strategies, so they need
  * slices 1 and 2 as well. {@link Compare#runAll} is executed once and its reports and progress
- * output are shared across the tests. Disabled until slice 3 lands.
+ * output are shared across the tests.
  */
-@Disabled("TODO(slice 3: Chase) — enable when implementing")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CompareTest {
 
@@ -48,9 +46,10 @@ class CompareTest {
 
     @Test
     void runAllWritesAProgressLineForEachStrategy() {
-        assertTrue(progressOutput.contains("single"), "progress should name the single run");
-        assertTrue(progressOutput.contains("pool"), "progress should name the pool run");
-        assertTrue(progressOutput.contains("per-chunk"), "progress should name the per-chunk run");
+        assertEquals("running single..." + System.lineSeparator()
+                        + "running pool..." + System.lineSeparator()
+                        + "running per-chunk..." + System.lineSeparator(),
+                progressOutput);
     }
 
     @Test
@@ -64,6 +63,10 @@ class CompareTest {
                 "the table should have a row per strategy");
         assertTrue(table.contains("100 threads") && table.contains("1 chunk"),
                 "per-chunk should be summarised, not listed as 100 rows");
+        assertTrue(table.contains("Wall time") && table.contains("Threads used")
+                        && table.contains("Chunks per thread"),
+                "the table should show every reported measurement");
+        assertEquals(6, table.lines().count(), "header, columns, divider, and three strategy rows");
     }
 
     @Test
@@ -72,5 +75,6 @@ class CompareTest {
 
         long mappedChunks = chunkMap.lines().filter(line -> line.contains("->")).count();
         assertEquals(100, mappedChunks, "every one of the 100 chunks should be mapped to a worker");
+        assertTrue(chunkMap.matches("(?s)chunk-0 -> pool-worker-\\d+.*chunk-99 -> pool-worker-\\d+$"));
     }
 }
