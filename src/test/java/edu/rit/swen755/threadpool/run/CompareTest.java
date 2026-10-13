@@ -77,4 +77,32 @@ class CompareTest {
         assertEquals(100, mappedChunks, "every one of the 100 chunks should be mapped to a worker");
         assertTrue(chunkMap.matches("(?s)chunk-0 -> pool-worker-\\d+.*chunk-99 -> pool-worker-\\d+$"));
     }
+
+    @Test
+    void formatTableLinesUpEveryColumnWithTheDivider() {
+        List<String> lines = Compare.formatTable(reports).lines().toList();
+        // line 0 is the processor count; then header, divider, and one row per strategy
+        List<Integer> dividerBars = barPositions(lines.get(2));
+        for (String line : lines.subList(1, lines.size())) {
+            assertEquals(dividerBars, barPositions(line).subList(0, 3),
+                    "column separators should line up with the divider: " + line);
+        }
+    }
+
+    @Test
+    void formatTableUsesOnlyPlainAscii() {
+        String table = Compare.formatTable(reports);
+        assertTrue(table.chars().allMatch(c -> c < 128),
+                "non-ASCII characters can show up as ? on some consoles: " + table);
+    }
+
+    private static List<Integer> barPositions(String line) {
+        List<Integer> positions = new java.util.ArrayList<>();
+        for (int i = 0; i < line.length() && positions.size() < 3; i++) {
+            if (line.charAt(i) == '|') {
+                positions.add(i);
+            }
+        }
+        return positions;
+    }
 }
