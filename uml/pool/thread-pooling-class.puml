@@ -79,6 +79,9 @@ package run {
     +totalPrimes() : long
     +chunksPerThread() : SortedMap<String, Integer>
   }
+  class RunResults <<package-private>> {
+    +{static} completedInOrder(slots : ChunkResult[]) : List<ChunkResult>
+  }
   class Compare {
     +{static} runAll(chunks : List<Chunk>, poolSize : int, progress : PrintStream) : List<RunReport>
     +{static} formatTable(reports : List<RunReport>) : String
@@ -110,6 +113,9 @@ ThreadPoolStrategy ..> PrimeRangeTask
 SingleThreadStrategy ..> PrimeRangeTask
 ThreadPerChunkStrategy ..> PrimeRangeTask : one new Thread\nper chunk
 Compare ..> ExecutionStrategy : runs all three
+SingleThreadStrategy ..> RunResults
+ThreadPoolStrategy ..> RunResults : every slot filled?
+ThreadPerChunkStrategy ..> RunResults
 
 Main ..> Chunks
 Main ..> Compare
