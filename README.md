@@ -92,15 +92,74 @@ working at once.
 
 ## Usage and command-line options
 
-<!-- TODO(slice 4: Mallikarjuna) -->
+```
+java -jar target/thread-pooling.jar [--n <N>] [--mode <mode>] [--output <file>]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--n <N>` | `50000000` | Upper bound of the range [1, N]. Must be a whole number of at least 100, so that each of the 100 chunks holds at least one integer. |
+| `--mode <mode>` | `compare` | Which strategy to run: `single`, `pool`, `per-chunk`, or `compare`. |
+| `--output <file>` | none | Write every prime in [1, N] to the file, one per line, in ascending order. Allowed with `single`, `pool`, and `per-chunk`, but not with `compare`. |
+
+The pool size (10) and the chunk count (100) are fixed constants, not options.
+
+| Mode | What it runs | What it prints |
+| --- | --- | --- |
+| `single` | All 100 chunks on the main thread | A one-line summary |
+| `pool` | The hand-built pool of 10 workers | A one-line summary, then which worker ran each of the 100 chunks |
+| `per-chunk` | 100 threads, one per chunk | A one-line summary |
+| `compare` | A warm-up, then all three in turn | A progress line per strategy, then the comparison table |
+
+Every mode finishes with a check of its count against the published number of primes up to N.
+Published values are built in for N = 10^6, 10^7, 5x10^7, and 10^8; for any other N the program
+says there is no value to check against.
+
+A short run in `single` mode looks like this (the time varies by machine):
+
+```
+$ scripts/run.sh --n 1000000 --mode single
+thread-pooling tactic (SWEN-755): primes in [1, 1000000], 100 chunks, pool of 10 worker threads
+single: 78498 primes in 39.234 ms on 1 thread(s)
+known-pi check: OK, pi(1000000) = 78498
+```
+
+Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | The run succeeded. |
+| 1 | Runtime failure: the output file could not be written, a task failed, or the count did not match the published value. |
+| 2 | Usage error: an unknown option or mode, a missing value, a non-numeric or too-small `--n`, or `--output` with `compare`. The usage text is printed to standard error. |
 
 ## How the tactic maps to the course
 
-<!-- TODO(slice 4: Mallikarjuna) -->
+Thread pooling is a performance tactic on the "manage resources" side of the catalogue in
+*Software Architecture in Practice*, 4th ed., Chapter 9. The program applies three ideas from that
+chapter and deliberately leaves one out.
+
+| Idea in the book | Where it is in the program |
+| --- | --- |
+| Introduce Concurrency (p. 141) | The 100 chunks are independent, so `ThreadPoolStrategy` runs up to 10 of them at once instead of one after another. |
+| Schedule Resources (p. 142) | `TaskQueue` is a first-in, first-out queue. A free worker always takes the oldest waiting chunk, so the scheduling policy is FIFO. |
+| The thread pool as a managed resource (p. 138) | `ThreadPool` creates its 10 workers once and keeps them for the whole run. The number of threads is fixed by the pool, not by the amount of work. |
+| Bound Queue Sizes (related, not applied) | The queue is unbounded. All 100 chunks are submitted up front and the number is known, so there is nothing to push back on. A server taking open-ended requests would need a bound. |
+
+The single-thread and thread-per-chunk strategies are not part of the tactic. They are the two
+alternatives it is measured against: no concurrency at all, and concurrency with no pooling.
 
 ## Quality attribute scenario
 
-<!-- TODO(slice 4: Mallikarjuna) -->
+The quality attribute is performance.
+
+| Part | Value |
+| --- | --- |
+| Source | A user at the command line. |
+| Stimulus | A request to count the primes in [1, 50,000,000], which arrives as 100 chunks of work at once. |
+| Artifact | The prime-counting program: the thread pool, its work queue, and the prime range tasks. |
+| Environment | Normal operation on one multi-core machine, with no other heavy load. |
+| Response | The pool's 10 workers take chunks from the queue in FIFO order until all 100 are done, and the program reports the total, which matches the published count. |
+| Response measure | All 100 chunks finish on exactly 10 threads, with every worker handling more than one chunk, and the wall time is lower than the single-thread run on the same machine. |
 
 ## Results
 
@@ -111,7 +170,20 @@ threads, and chunks handled per thread; the chunk-to-worker map makes reuse by t
 
 ## Trade-offs
 
-<!-- TODO(slice 4: Mallikarjuna) -->
+A fixed pool of 10 is a deliberate limit, and it costs something on both sides. On a machine with
+more than 10 cores the pool leaves cores idle, and thread-per-chunk can finish sooner because it
+uses all of them. On a machine with fewer than 10 cores the extra workers only add context
+switching. A pool sized from the core count would fit each machine better, but the assignment
+fixes the size at 10.
+
+The work queue is unbounded, so memory grows with the number of waiting tasks. That is harmless
+here, where 100 small task objects are queued once, and it would be a real risk in a system that
+accepts work faster than it can finish it.
+
+Concurrency also costs simplicity. The single-thread strategy is a plain loop. The pool needs a
+synchronized queue, `wait()`/`notify()` signalling, an orderly shutdown, and one result slot per
+chunk so that workers never write to the same place, and all of that has to be tested for races
+and lost wake-ups. That is the price paid for the shorter wall time.
 
 ## Design (UML)
 
