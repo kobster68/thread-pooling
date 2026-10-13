@@ -183,10 +183,10 @@ running pool...
 running per-chunk...
 available processors: 10
 Strategy     | Wall time (ms) | Threads used  | Chunks per thread
--------------|--------------|---------------|------------------
-single       |     8183.747 | 1             | main=100
-pool         |     1880.695 | 10            | pool-worker-0=10, pool-worker-1=9, pool-worker-2=9, pool-worker-3=10, pool-worker-4=10, pool-worker-5=10, pool-worker-6=11, pool-worker-7=9, pool-worker-8=11, pool-worker-9=11
-per-chunk    |     1875.125 | 100           | 100 threads × 1 chunk
+-------------|----------------|---------------|------------------
+single       |       8183.747 | 1             | main=100
+pool         |       1880.695 | 10            | pool-worker-0=10, pool-worker-1=9, pool-worker-2=9, pool-worker-3=10, pool-worker-4=10, pool-worker-5=10, pool-worker-6=11, pool-worker-7=9, pool-worker-8=11, pool-worker-9=11
+per-chunk    |       1875.125 | 100           | 100 threads x 1 chunk
 all three strategies found 3001134 primes
 known-pi check: OK, pi(50000000) = 3001134
 ```
@@ -200,10 +200,10 @@ running pool...
 running per-chunk...
 available processors: 10
 Strategy     | Wall time (ms) | Threads used  | Chunks per thread
--------------|--------------|---------------|------------------
-single       |       36.131 | 1             | main=100
-pool         |        7.834 | 10            | pool-worker-0=19, pool-worker-1=4, pool-worker-2=4, pool-worker-3=4, pool-worker-4=4, pool-worker-5=4, pool-worker-6=19, pool-worker-7=4, pool-worker-8=19, pool-worker-9=19
-per-chunk    |        8.841 | 100           | 100 threads × 1 chunk
+-------------|----------------|---------------|------------------
+single       |         36.131 | 1             | main=100
+pool         |          7.834 | 10            | pool-worker-0=19, pool-worker-1=4, pool-worker-2=4, pool-worker-3=4, pool-worker-4=4, pool-worker-5=4, pool-worker-6=19, pool-worker-7=4, pool-worker-8=19, pool-worker-9=19
+per-chunk    |          8.841 | 100           | 100 threads x 1 chunk
 all three strategies found 78498 primes
 known-pi check: OK, pi(1000000) = 78498
 ```

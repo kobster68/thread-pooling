@@ -56,7 +56,7 @@ public final class Compare {
      * <p>The table begins with a header line containing the exact text
      * {@code available processors: <n>}, where {@code <n>} is {@link Runtime#availableProcessors()},
      * then shows wall time, threads used, and chunks per thread for each strategy. The per-chunk
-     * strategy is summarised as one row reading {@code 100 threads × 1 chunk} rather than listed as
+     * strategy is summarised as one row reading {@code 100 threads x 1 chunk} rather than listed as
      * 100 separate rows.
      *
      * @param reports the reports to tabulate, as returned by {@link #runAll}
@@ -67,17 +67,17 @@ public final class Compare {
                 .append("available processors: ")
                 .append(Runtime.getRuntime().availableProcessors())
                 .append(System.lineSeparator())
-                .append(String.format(Locale.ROOT, "%-12s | %12s | %-13s | %s",
+                .append(String.format(Locale.ROOT, "%-12s | %14s | %-13s | %s",
                         "Strategy", "Wall time (ms)", "Threads used", "Chunks per thread"))
                 .append(System.lineSeparator())
-                .append("-------------|--------------|---------------|------------------");
+                .append("-------------|----------------|---------------|------------------");
         for (RunReport report : reports) {
             var chunksPerThread = report.chunksPerThread();
             String chunkSummary;
             if ("per-chunk".equals(report.strategy())
                     && !chunksPerThread.isEmpty()
                     && chunksPerThread.values().stream().allMatch(count -> count == 1)) {
-                chunkSummary = report.threadsUsed() + " threads × 1 chunk";
+                chunkSummary = report.threadsUsed() + " threads x 1 chunk";
             } else {
                 chunkSummary = chunksPerThread.entrySet().stream()
                         .map(entry -> entry.getKey() + "=" + entry.getValue())
@@ -85,7 +85,7 @@ public final class Compare {
                         .orElse("0 chunks");
             }
             table.append(System.lineSeparator())
-                    .append(String.format(Locale.ROOT, "%-12s | %12.3f | %-13d | %s",
+                    .append(String.format(Locale.ROOT, "%-12s | %14.3f | %-13d | %s",
                             report.strategy(), report.wallNanos() / 1_000_000.0,
                             report.threadsUsed(), chunkSummary));
         }
