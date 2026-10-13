@@ -19,7 +19,7 @@ The program has three packages, and the diagram groups the classes that way.
 
 `primes` is the work. `Chunks.split` cuts [1, N] into 100 equal ranges, and each range becomes a `PrimeRangeTask`, which is just a `Runnable`. The pool has no idea it's counting primes, and we liked keeping it that way: it would run any `Runnable` you gave it. Each task writes its `ChunkResult` into its own slot of a shared array, so no two tasks ever write to the same place and the results need no locking.
 
-`run` is how we measure the tactic. The three `ExecutionStrategy` implementations run the same chunks three ways: all on one thread, on the pool, or on one new thread per chunk. Each returns a `RunReport`, and `Compare` runs all three and prints them side by side. Only `ThreadPoolStrategy` uses the pool. The other two exist so the pool has something to be measured against; a speedup number on its own wouldn't tell you much.
+`run` is how we measure the tactic. The three `ExecutionStrategy` implementations run the same chunks three ways: all on one thread, on the pool, or on one new thread per chunk. Each returns a `RunReport`, and `Compare` runs all three and prints them side by side. Before building its report, every strategy passes its result slots to `RunResults`, which throws if any slot is still empty, so a task that never ran shows up as an error instead of a wrong count. Only `ThreadPoolStrategy` uses the pool. The other two exist so the pool has something to be measured against; a speedup number on its own wouldn't tell you much.
 
 `Main` reads the command line and picks a strategy, or `Compare`. The pool size (10) and chunk count (100) are constants in `Main` rather than options, because the assignment fixes the pool at 10 threads.
 

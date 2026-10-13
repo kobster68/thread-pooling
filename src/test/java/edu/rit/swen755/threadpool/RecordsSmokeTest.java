@@ -13,8 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Day-one smoke test: the shared records hold the fields they are given. This runs green from
- * step 0, before any slice is implemented, and does not touch the stubbed behaviour.
+ * Checks that the shared records ({@code Chunk}, {@code ChunkResult}, {@code RunReport}) hold the
+ * fields they are given.
  */
 class RecordsSmokeTest {
 
