@@ -168,6 +168,104 @@ The comparison runs the same 100 chunks serially on the calling thread, through 
 the first million integers, it measures each complete run and reports wall time, participating
 threads, and chunks handled per thread; the chunk-to-worker map makes reuse by the pool visible.
 
+### Measured runs
+
+These numbers are from one machine: an Apple M4 with 10 cores (4 performance and 6 efficiency),
+macOS 15.8, OpenJDK 21.0.12. Each command was run three times. The output shown is the first run,
+and the text gives the range across all three.
+
+Compare at the default N of 50,000,000 (`scripts/run.sh`):
+
+```
+thread-pooling tactic (SWEN-755): primes in [1, 50000000], 100 chunks, pool of 10 worker threads
+running single...
+running pool...
+running per-chunk...
+available processors: 10
+Strategy     | Wall time (ms) | Threads used  | Chunks per thread
+-------------|--------------|---------------|------------------
+single       |     8183.747 | 1             | main=100
+pool         |     1880.695 | 10            | pool-worker-0=10, pool-worker-1=9, pool-worker-2=9, pool-worker-3=10, pool-worker-4=10, pool-worker-5=10, pool-worker-6=11, pool-worker-7=9, pool-worker-8=11, pool-worker-9=11
+per-chunk    |     1875.125 | 100           | 100 threads × 1 chunk
+all three strategies found 3001134 primes
+known-pi check: OK, pi(50000000) = 3001134
+```
+
+Compare at N = 1,000,000 (`scripts/run.sh --n 1000000`):
+
+```
+thread-pooling tactic (SWEN-755): primes in [1, 1000000], 100 chunks, pool of 10 worker threads
+running single...
+running pool...
+running per-chunk...
+available processors: 10
+Strategy     | Wall time (ms) | Threads used  | Chunks per thread
+-------------|--------------|---------------|------------------
+single       |       36.131 | 1             | main=100
+pool         |        7.834 | 10            | pool-worker-0=19, pool-worker-1=4, pool-worker-2=4, pool-worker-3=4, pool-worker-4=4, pool-worker-5=4, pool-worker-6=19, pool-worker-7=4, pool-worker-8=19, pool-worker-9=19
+per-chunk    |        8.841 | 100           | 100 threads × 1 chunk
+all three strategies found 78498 primes
+known-pi check: OK, pi(1000000) = 78498
+```
+
+| N | single (ms) | pool (ms) | per-chunk (ms) |
+| --- | --- | --- | --- |
+| 50,000,000 | 8,184 to 8,499 | 1,881 to 1,919 | 1,865 to 1,897 |
+| 1,000,000 | 36.1 to 36.3 | 7.8 to 8.0 | 8.6 to 8.8 |
+
+### Evidence of thread reuse
+
+The start and end of the chunk-to-worker map from `scripts/run.sh --mode pool` at the default N:
+
+```
+pool: 3001134 primes in 2002.100 ms on 10 thread(s)
+chunk-0 -> pool-worker-0
+chunk-1 -> pool-worker-8
+chunk-2 -> pool-worker-9
+chunk-3 -> pool-worker-7
+chunk-4 -> pool-worker-6
+chunk-5 -> pool-worker-5
+chunk-6 -> pool-worker-4
+chunk-7 -> pool-worker-3
+chunk-8 -> pool-worker-2
+chunk-9 -> pool-worker-1
+chunk-10 -> pool-worker-0
+chunk-11 -> pool-worker-8
+...
+chunk-98 -> pool-worker-3
+chunk-99 -> pool-worker-0
+known-pi check: OK, pi(50000000) = 3001134
+```
+
+The first ten chunks go to ten different workers. Chunk 10 then goes back to `pool-worker-0`, the
+same thread that ran chunk 0, and `pool-worker-0` is still taking work at chunk 99. In this run
+each of the 10 workers handled exactly 10 of the 100 chunks. No thread was created after the pool
+started.
+
+### What the numbers show
+
+The pool is about 4.4 times faster than the single thread at the default N, and about 4.6 times
+faster at N = 1,000,000. It is not 10 times faster with 10 workers, most likely because only 4 of
+this machine's 10 cores are performance cores.
+
+The pool does not beat thread-per-chunk on raw time. At the default N, thread-per-chunk was
+slightly faster in all three runs, by between 0.3% and 1.9%, which is within the run-to-run
+spread. Creating 100 threads costs very little next to chunks that each take around 80 ms of
+work. At N = 1,000,000, where a chunk takes well under a millisecond, the pool was about 10%
+faster in all three runs, because the cost of creating a thread per chunk is no longer hidden. On
+a machine with more than 10 cores, thread-per-chunk could pull ahead, since it can use every core
+and the pool is capped at 10.
+
+So the pool's payoff here is not speed over the no-pooling alternative. It is that the thread
+count is bounded at 10 however many chunks there are, and that no thread is created per task.
+With 100 chunks, 100 threads are affordable. With 100,000 chunks they would not be, and the pool
+would still use 10.
+
+The comparison is also not a clean test of reuse alone. The two concurrent strategies differ in
+two ways at once: the pool reuses its threads and has 10 of them alive, while thread-per-chunk
+creates each thread once and has up to 100 alive. The timings mix those two effects and cannot
+separate them.
+
 ## Trade-offs
 
 A fixed pool of 10 is a deliberate limit, and it costs something on both sides. On a machine with
